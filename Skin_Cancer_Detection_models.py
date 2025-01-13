@@ -351,6 +351,11 @@ nn_model = create_nn(num_hidden_layers, hidden_layer_sizes)
 # Display the model architecture
 nn_model.summary()
 
+# Output Shape: specifies the size of the output for each layer.
+# Param:specifies the number of parameters (weights and biases) learned for each layer.
+# (The number of neurons in the previous layer) * (The number of neurons in the current layer) + (The number of biases in the current layer)
+# For example: The first layer has 128*112*112*3 + 128 = 3,211,776 parameters
+
 
 # ### Training and evaluating
 
