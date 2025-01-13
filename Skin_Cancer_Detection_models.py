@@ -235,8 +235,8 @@ baseline_majority_class = create_baseline_model(train_generator)
 baseline_predictions, baseline_true_labels = evaluate_baseline_model(baseline_majority_class, test_generator)
 
 # Display results
-print(f"Baseline Predictions (first 10): {baseline_predictions[:10]}")
-print(f"True Labels (first 10): {baseline_true_labels[:10]}")
+print(f"Baseline Predictions (first 10): {baseline_predictions[:2000]}")
+print(f"True Labels (first 10): {baseline_true_labels[:2000]}")
 
 
 # ### Model Evaluation Metrics
@@ -275,6 +275,14 @@ baseline_report = classification_report(
 # Display the classification report
 print("\nClassification Report:\n")
 print(baseline_report)
+
+# Accuracy = Number of correct predictions/Total number of samples
+# Precision = True Positives*(True Positives+False Positives)  
+# Recall = True Positives*(True Positives+False Negatives) 
+# F1 Score = ((Precision⋅Recall)*2)/(Precision+Recall) 
+# Support = the number of true examples from each class 
+# Macro avg = a simple average of all the indices between the departments.
+# Weighted avg = the weighted average of all the indices between the departments, considering the number of true examples from each class.
 
 
 # ### Confusion Matrix
