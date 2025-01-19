@@ -24,6 +24,11 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Flatten, Dense, Dropout, Conv2D, MaxPooling2D, BatchNormalization
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import TensorBoard, EarlyStopping
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras import backend as K
+from tensorflow.compat.v1 import reset_default_graph
+
 #----------
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import classification_report, mean_squared_error, accuracy_score, precision_score, recall_score
@@ -38,6 +43,10 @@ from PIL import Image
 #----------
 import warnings
 warnings.filterwarnings('ignore')
+#----------
+import seaborn as sns
+#----------
+from IPython.display import Image
 
 
 # ## Load and preprocess the dataset
@@ -73,15 +82,26 @@ class_folders = ["Benign", "Malignant"]
 train_data_path = os.path.join(main_folder_path, data_folders[0])
 test_data_path = os.path.join(main_folder_path, data_folders[1])
 
+print("Train Data Path:", train_data_path)
+print("Test Data Path:", test_data_path)
 
-# Set those hyperparamaters as you wish
+print("Train folder content:")
+for item in os.listdir(train_data_path):
+    print(f"- {item}")
+
+print("Test folder content:")
+for item in os.listdir(test_data_path):
+    print(f"- {item}")
+
+
+# Set hyperparamaters 
 
 # In[6]:
 
 
 img_width, img_height = 112, 112 
-batch_size = 128
-epochs = 15
+batch_size = 32
+epochs = 15    
 
 
 # In[7]:
@@ -107,57 +127,38 @@ test_generator = test_datagen.flow_from_directory(
 )
 
 
-# ### Samples Examples
-
 # In[8]:
 
 
-# Get the first batch from the training generator
-x_batch, y_batch = next(train_generator)
+def plotCount(generator):
+    # ספירת כמות התמונות בקטגוריות Benign ו-Malignant
+    malignant_count = sum(generator.labels == 1)
+    benign_count = sum(generator.labels == 0)
+    total_count = len(generator.labels)
 
-# Extract features and label from the first element in the batch
-first_features = x_batch[0]
-first_label = y_batch[0]
+    print(f"Total images is {total_count}")
+    print(f"Total malignant images is {malignant_count} ({round(malignant_count / total_count * 100, 2)}%)")
+    print(f"Total benign images is {benign_count} ({round(benign_count / total_count * 100, 2)}%)")
 
-# Get the mapping of class indices to class names
-class_indices = train_generator.class_indices
-
-# Reverse the mapping to get class names to class indices
-class_names = {v: k for k, v in class_indices.items()}
-
-# Extract the numerical label of the first element in the batch
-numerical_label = int(first_label)
-
-# Get the corresponding class name
-label_name = class_names[numerical_label]
-print(int(first_label), "stands for", label_name)
+    sns.set_style("whitegrid")
+    plt.figure(figsize=(6, 4))
+    sns.countplot(x=generator.labels)
+    plt.title("Image Count for Benign vs Malignant")
+    plt.xlabel("Label (0=Benign, 1=Malignant)")
+    plt.ylabel("Count")
+    plt.show()
 
 
 # In[9]:
 
 
-# Display information about the dataset
-shapes = np.shape(train_generator[0][0])
-print("A batch contains", shapes[0], "samples of", shapes[1], "x", shapes[2], "x", shapes[3])
+plotCount(train_generator)
 
 
 # In[10]:
 
 
-# Select 3 random indices from the list
-random_indices = random.sample(range(len(train_generator)), 3)
-
-# Display the selected images in a 3x1 grid
-fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-
-for i, index in enumerate(random_indices):
-    # Show each image
-    image = train_generator[index][0][0]
-    axes[i].imshow(image)
-    axes[i].axis('off')
-
-plt.tight_layout()
-plt.show()
+plotCount(test_generator)
 
 
 # # Models
@@ -172,27 +173,17 @@ plt.show()
 
 
 def create_baseline_model(train_generator):
-    """
-    Create a baseline model that predicts the majority class.
-
-    Parameters:
-    - train_generator: The training data generator.
-
-    Returns:
-    - majority_class_index: The index of the most frequent class in the training data.
-    """
-    # Extract labels from the training generator
+      # Extract all labels from the entire dataset (train_generator.classes)
     labels = train_generator.classes
-    
+
     # Find the most frequent class (numeric index)
     majority_class_index = np.argmax(np.bincount(labels))
-    
-    # Print information about the majority class
+
     for class_name, index in train_generator.class_indices.items():
         if index == majority_class_index:
             print(f"The majority class is: {class_name} (Index: {majority_class_index})")
             break
-    
+
     return majority_class_index
 
 
@@ -202,23 +193,11 @@ def create_baseline_model(train_generator):
 
 
 def evaluate_baseline_model(majority_class_index, test_generator):
-    """
-    Evaluate the baseline model.
 
-    Parameters:
-    - majority_class_index: The index of the most frequent class.
-    - test_generator: The test data generator.
-
-    Returns:
-    - predicted_labels: Predicted labels (all as the majority class).
-    - true_labels: True labels from the test data.
-    """
-    # Extract true labels from the test generator
     true_labels = test_generator.classes
-    
-    # Generate predictions (all as the majority class index)
+
     predicted_labels = np.full_like(true_labels, fill_value=majority_class_index)
-    
+
     return predicted_labels, true_labels
 
 
@@ -227,7 +206,6 @@ def evaluate_baseline_model(majority_class_index, test_generator):
 # In[13]:
 
 
-model_type = 'baseLine'
 # Create the baseline model
 baseline_majority_class = create_baseline_model(train_generator)
 
@@ -235,8 +213,8 @@ baseline_majority_class = create_baseline_model(train_generator)
 baseline_predictions, baseline_true_labels = evaluate_baseline_model(baseline_majority_class, test_generator)
 
 # Display results
-print(f"Baseline Predictions (first 10): {baseline_predictions[:2000]}")
-print(f"True Labels (first 10): {baseline_true_labels[:2000]}")
+print(f"Baseline Predictions (first 1001): {baseline_predictions[:1001]}")
+print(f"True Labels (first 1001): {baseline_true_labels[:1001]}")
 
 
 # ### Model Evaluation Metrics
@@ -244,25 +222,33 @@ print(f"True Labels (first 10): {baseline_true_labels[:2000]}")
 # In[14]:
 
 
-# Calculate accuracy
-baseline_accuracy = accuracy_score(baseline_true_labels, baseline_predictions)
+def evaluate_model_performance(true_labels, predicted_labels, pos_label=1):
 
-# Calculate precision
-baseline_precision = precision_score(baseline_true_labels, baseline_predictions, pos_label=1)
+    mse = mean_squared_error(true_labels, predicted_labels)
 
-# Calculate recall
-baseline_recall = recall_score(baseline_true_labels, baseline_predictions, pos_label=1)
+    accuracy = accuracy_score(true_labels, predicted_labels) * 100
 
-# Display metrics
-print("Baseline Model Metrics:")
-print(f"- Accuracy:  {baseline_accuracy:.4f}")
-print(f"- Precision: {baseline_precision:.4f}")
-print(f"- Recall:    {baseline_recall:.4f}")
+    precision = precision_score(true_labels, predicted_labels, pos_label=pos_label) * 100
+
+    recall = recall_score(true_labels, predicted_labels, pos_label=pos_label) * 100
+
+    print(f"Mean Squared Error: {mse:.2f}")
+    print(f"Accuracy: {accuracy:.2f}%")
+    print(f"Precision: {precision:.2f}%")
+    print(f"Recall: {recall:.2f}%")
+
+    return accuracy, precision, recall, mse
+
+
+# In[15]:
+
+
+evaluate_model_performance(baseline_true_labels, baseline_predictions)
 
 
 # ### Classification Report
 
-# In[15]:
+# In[16]:
 
 
 # Generate classification report
@@ -281,30 +267,41 @@ print(baseline_report)
 # Recall = True Positives*(True Positives+False Negatives) 
 # F1 Score = ((Precision⋅Recall)*2)/(Precision+Recall) 
 # Support = the number of true examples from each class 
-# Macro avg = a simple average of all the indices between the departments.
-# Weighted avg = the weighted average of all the indices between the departments, considering the number of true examples from each class.
+# Macro avg = a simple average of all the indices between the classes.
+# Weighted avg = the weighted average of all the indices between the classes, considering the number of true examples from each class.
 
 
 # ### Confusion Matrix
 
-# In[16]:
+# In[17]:
 
 
-# Generate confusion matrix
 baseline_cm = confusion_matrix(baseline_true_labels, baseline_predictions)
 
-# Display the confusion matrix
-disp = ConfusionMatrixDisplay(confusion_matrix=baseline_cm, display_labels=list(test_generator.class_indices.keys()))
-disp.plot(cmap='Blues', values_format='d')
-plt.title("Confusion Matrix for Baseline Model")
+disp = ConfusionMatrixDisplay(confusion_matrix=baseline_cm, display_labels=["Benign", "Malignant"])
+
+fig, ax = plt.subplots(figsize=(6, 6))
+disp.plot(cmap='Blues', values_format='d', ax=ax)
+ax.grid(False)
+plt.title("Confusion Matrix for Baseline Model", fontsize=14)
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.xticks(rotation=45)
+plt.tight_layout()
 plt.show()
+
+
+# In[18]:
+
+
+reset_default_graph()
 
 
 # ## Neural Network 
 
 # ### Creation
 
-# In[17]:
+# In[19]:
 
 
 def create_nn(num_hidden_layers, hidden_layer_sizes, learning_rate=0.0001):
@@ -329,16 +326,15 @@ def create_nn(num_hidden_layers, hidden_layer_sizes, learning_rate=0.0001):
     model.add(Dense(1, activation='sigmoid')) 
 
     # Compile the model with specified learning rate
-    optimizer = Adam(learning_rate=learning_rate)
     model.compile(
-        optimizer=optimizer,
+        optimizer=Adam(learning_rate=learning_rate),
         loss='binary_crossentropy',
         metrics=['accuracy'])
 
     return model
 
 
-# In[18]:
+# In[20]:
 
 
 # Define NN sizes
@@ -354,89 +350,89 @@ nn_model.summary()
 # Output Shape: specifies the size of the output for each layer.
 # Param:specifies the number of parameters (weights and biases) learned for each layer.
 # (The number of neurons in the previous layer) * (The number of neurons in the current layer) + (The number of biases in the current layer)
-# For example: The first layer has 128*112*112*3 + 128 = 3,211,776 parameters
+# For example: The first layer has 128*112*112*3 + 128 = 4,817,024 parameters (+128 biases)
 
 
 # ### Training and evaluating
 
-# In[19]:
+# In[21]:
 
 
-model_type = 'NN'
-history = nn_model.fit(train_generator, epochs=epochs, validation_data=test_generator)
+# Define the callback to use TensorBoard
+tensorboard_callback = TensorBoard(log_dir='./logs', histogram_freq=1)
 
-# Evaluate the model
-test_loss, test_acc = nn_model.evaluate(test_generator)
-print(f'Test Accuracy: {test_acc}')
+# Train the model with TensorBoard callback
+history = nn_model.fit(train_generator, epochs=epochs, validation_data=test_generator, callbacks=[tensorboard_callback])
+
+
+# In[22]:
+
+
+last_val_accuracy = history.history['val_accuracy'][-1]
+
+print(f"Test Accuracy: {last_val_accuracy}")
 
 
 # ### Training Results
 
-# In[20]:
+# In[23]:
 
 
-# Plot training and test accuracy values
-plt.figure(figsize=(12, 4))
-plt.subplot(1, 2, 1)
-plt.plot(np.arange(1, len(history.history['val_accuracy']) + 1), history.history['val_accuracy'], label='Test Accuracy', color="steelblue")
-plt.plot(np.arange(1, len(history.history['accuracy']) + 1), history.history['accuracy'], label='Training Accuracy', color="skyblue")
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.title('Training and Test Accuracy')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(history.history['accuracy']) + 1))
-plt.legend()
+def plot_history(history, name, metric):
 
-# Plot training and test loss values
-plt.subplot(1, 2, 2)
-plt.plot(np.arange(1, len(history.history['val_loss']) + 1), history.history['val_loss'], label='Test Loss', color="steelblue")
-plt.plot(np.arange(1, len(history.history['loss']) + 1), history.history['loss'], label='Training Loss', color="skyblue")
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.title('Training and Test Loss')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(history.history['loss']) + 1))
-plt.legend()
+    label_val = 'val_%s' % metric
 
-plt.tight_layout()
-plt.show()
+    # Extract the training and validation metrics
+    train = history.history[metric]
+    test = history.history[label_val]
+
+    # Create count of the number of epochs
+    epoch_count = range(1, len(train) + 1)
+
+    # Plot the training and validation metric
+    plt.plot(epoch_count, train, 'r-', label='Train')
+    plt.plot(epoch_count, test, 'b--', label='Test')
+
+    plt.legend()
+    plt.xlabel('Epoch')
+    plt.ylabel(metric)
+    plt.title(f'{metric.capitalize()} History for {name}')
+
+    plt.show()
+
+
+# In[24]:
+
+
+plot_history(history, 'NN', 'accuracy')
+
+
+# In[25]:
+
+
+plot_history(history, 'NN', 'loss')
 
 
 # ### Model Evaluation Metrics
 
-# In[21]:
+# In[26]:
 
 
-# Evaluate the model on the test data and get predictions
 predicted_probabilities = nn_model.predict(test_generator)
 
 # Convert probabilities to binary predictions (0 or 1)
-predicted_labels = np.round(predicted_probabilities).astype(np.int32)
+predicted_labels = np.where(predicted_probabilities > 0.5, 1, 0).astype(np.int32)
 
 # Get true labels
 true_labels = test_generator.classes
 
-# Calculate Mean Squared Error (MSE)
-mse = mean_squared_error(true_labels, predicted_labels)
-
-# Calculate Accuracy
-accuracy = accuracy_score(true_labels, predicted_labels)
-
-# Calculate Precision
-precision = precision_score(true_labels, predicted_labels)
-
-# Calculate Recall
-recall = recall_score(true_labels, predicted_labels)
-
-print(f'MSE:       {mse:.5f}')
-print(f'Accuracy:  {accuracy:.5f}')
-print(f'Precision: {precision:.5f}')
-print(f'Recall:    {recall:.5f}')
+# Use the evaluate_model_performance function
+accuracy, precision, recall, mse = evaluate_model_performance(true_labels, predicted_labels)
 
 
 # ### Classification Report
 
-# In[22]:
+# In[27]:
 
 
 # Generate classification report
@@ -446,164 +442,124 @@ print("Classification Report:\n", report)
 
 # ### Confution Matrix
 
-# In[23]:
+# In[28]:
 
 
-# Generate confusion matrix
-cm = confusion_matrix(true_labels, predicted_labels)
+nn_cm = confusion_matrix(true_labels, predicted_labels)
 
-# Display the confusion matrix
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Benign", "Malignant"])
-disp.plot(cmap='Blues', values_format='d')
-plt.title("Confusion Matrix")
+disp = ConfusionMatrixDisplay(confusion_matrix=nn_cm, display_labels=["Benign", "Malignant"])
+
+fig, ax = plt.subplots(figsize=(6, 6))
+disp.plot(cmap='Blues', values_format='d', ax=ax)
+ax.grid(False)
+plt.title("Confusion Matrix for Neural Network Model", fontsize=14)
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.xticks(rotation=45)
+plt.tight_layout()
 plt.show()
+
+
+# In[29]:
+
+
+K.clear_session()
 
 
 # ## Logistic Regression
 
 # ### Creation
 
-# In[24]:
+# In[30]:
 
 
-def create_logistic_regression_model(input_shape, num_classes):
-    """
-    Create a logistic regression model.
+def create_logistic_regression_model(input_shape):
 
-    Parameters:
-    - input_shape: Tuple, shape of the input data (e.g., (height, width, channels)).
-    - num_classes: Integer, number of classes for classification.
+    model = Sequential()
 
-    Returns:
-    - lr_model: Compiled logistic regression model.
-    """
-    lr_model = Sequential()
-  
-    # Add an input layer with the specified input shape
-    lr_model.add(tf.keras.Input(shape=input_shape))
+    model.add(tf.keras.Input(shape=input_shape))
 
-    # Flatten the input
-    lr_model.add(tf.keras.layers.Flatten())
+    model.add(Flatten())
 
-    # Add a dense layer with the number of classes
-    lr_model.add(tf.keras.layers.Dense(num_classes))
-        
-    # Apply softmax activation to the output layer
-    lr_model.add(tf.keras.layers.Softmax())
-    
-    # Compile the model with Adam optimizer, sparse categorical crossentropy loss, and accuracy metric
-    lr_model.compile(
-    optimizer='adam',
-    loss='sparse_categorical_crossentropy',
-    metrics=['accuracy']
+    model.add(Dense(1))
+
+    model.add(tf.keras.layers.Activation('sigmoid'))
+
+    model.compile(
+        optimizer=Adam(learning_rate=0.0001),
+        loss='binary_crossentropy',
+        metrics=['accuracy']
     )
 
-    return lr_model
+    return model
 
 
-# In[25]:
+# In[31]:
 
 
 # Model parameters
 input_shape = (img_width, img_height, 3)
-num_classes = 2
-
-
-# In[26]:
-
 
 # Get model
-lr_model = create_logistic_regression_model(input_shape, num_classes)
+logistic_model = create_logistic_regression_model(input_shape)
 
 # Display the model architecture
-lr_model.summary()
+logistic_model.summary()
 
 
 # ### Training and evaluating
 
-# In[27]:
+# In[32]:
 
 
-model_type = 'Logistic Regression'
-# Train
-lr_history = lr_model.fit(
-  train_generator,
-  epochs=epochs,
-  validation_data=test_generator  
-)
+tensorboard_callback = TensorBoard(log_dir='./logs', histogram_freq=1)
 
-# Evaluate
-test_loss, test_acc = lr_model.evaluate(test_generator)
-print('Test accuracy:', test_acc)
+# Train the model with TensorBoard callback
+history = logistic_model.fit(train_generator, epochs=epochs, validation_data=test_generator, callbacks=[tensorboard_callback])
+
+
+# In[33]:
+
+
+last_val_accuracy = history.history['val_accuracy'][-1]
+
+print(f"Test Accuracy: {last_val_accuracy}")
 
 
 # ### Training Results
 
-# In[28]:
+# In[34]:
 
 
-# Plot training and test accuracy values
-plt.figure(figsize=(12, 4))
-plt.subplot(1, 2, 1)
-plt.plot(np.arange(1, len(lr_history.history['val_accuracy']) + 1), lr_history.history['val_accuracy'], label='Test Accuracy', color='darkgoldenrod')
-plt.plot(np.arange(1, len(lr_history.history['accuracy']) + 1), lr_history.history['accuracy'], label='Training Accuracy', color='gold')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.title('Training and Test Accuracy')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(lr_history.history['val_accuracy']) + 1))
-plt.legend()
+plot_history(history, 'logistic', 'accuracy')
 
-# Plot training and test loss values
-plt.subplot(1, 2, 2)
-plt.plot(np.arange(1, len(lr_history.history['val_loss']) + 1), lr_history.history['val_loss'], label='Test Loss', color='darkgoldenrod')
-plt.plot(np.arange(1, len(lr_history.history['loss']) + 1), lr_history.history['loss'], label='Training Loss', color='gold')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.title('Training and Test Loss')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(lr_history.history['val_loss']) + 1))
-plt.legend()
 
-plt.tight_layout()
-plt.show()
+# In[35]:
+
+
+plot_history(history, 'logistic', 'loss')
 
 
 # ### Model Evaluation Metrics
 
-# In[29]:
+# In[36]:
 
 
-# Evaluate the model on the test data and get predictions
-predicted_probabilities = lr_model.predict(test_generator)
+predicted_probabilities = logistic_model.predict(test_generator)
 
 # Convert probabilities to binary predictions (0 or 1)
-predicted_labels = np.round(predicted_probabilities).astype(np.int32)[:, 1]  # [:, 0] is the probabily to mistake.
+predicted_labels = np.where(predicted_probabilities > 0.5, 1, 0).astype(np.int32)
 
 # Get true labels
 true_labels = test_generator.classes
 
-# Calculate Mean Squared Error (MSE)
-mse = mean_squared_error(true_labels, predicted_labels)
-
-# Calculate Accuracy
-accuracy = accuracy_score(true_labels, predicted_labels)
-
-# Calculate Precision
-precision = precision_score(true_labels, predicted_labels)
-
-# Calculate Recall
-recall = recall_score(true_labels, predicted_labels)
-
-print(f'MSE:       {mse:.5f}')
-print(f'Accuracy:  {accuracy:.5f}')
-print(f'Precision: {precision:.5f}')
-print(f'Recall:    {recall:.5f}')
+# Use the evaluate_model_performance function
+accuracy, precision, recall, mse = evaluate_model_performance(true_labels, predicted_labels)
 
 
 # ### Classification Report
 
-# In[30]:
+# In[37]:
 
 
 # Generate classification report
@@ -613,78 +569,102 @@ print("Classification Report:\n", report)
 
 # ### Confusion Matrix
 
-# In[31]:
+# In[38]:
 
 
-# Generate confusion matrix
-cm = confusion_matrix(true_labels, predicted_labels)
+logistic_cm = confusion_matrix(true_labels, predicted_labels)
 
-# Display the confusion matrix
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Benign", "Malignant"])
-disp.plot(cmap='YlOrBr', values_format='d')
-plt.title("Confusion Matrix")
+disp = ConfusionMatrixDisplay(confusion_matrix=logistic_cm, display_labels=["Benign", "Malignant"])
+
+fig, ax = plt.subplots(figsize=(6, 6))
+disp.plot(cmap='Blues', values_format='d', ax=ax)
+ax.grid(False)
+plt.title("Confusion Matrix for Logistic Regression Model", fontsize=14)
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.xticks(rotation=45)
+plt.tight_layout()
 plt.show()
+
+
+# In[39]:
+
+
+K.clear_session()
 
 
 # ## Convolutional Neural Network
 
 # ### Creation
 
-# In[32]:
+# In[40]:
 
 
-def create_cnn_model(input_shape, num_classes, 
-                    conv_layers=2, 
-                    conv_filters=32,
-                    conv_kernel_size=(3,3),
-                    conv_activation='relu',
-                    pool_size=(2,2),
-                    learning_rate=0.0001):
+# יצירת המודל
+def Convolutional_neural_network_model(input_shape):
+    model = Sequential()  # מודל סיקוונסיאלי, בו כל השכבות ממוקמות אחת אחרי השנייה
 
-    # Create sequential model
-    cnn_model = Sequential()
-    
-    # Add input layer
-    cnn_model.add(Conv2D(conv_filters, kernel_size=conv_kernel_size, activation=conv_activation, input_shape=input_shape))
-    cnn_model.add(BatchNormalization())
-    cnn_model.add(MaxPooling2D(pool_size=pool_size))
+    # שכבת קונבולוציה ראשונה
+    model.add(Conv2D(64, (3, 3), activation='relu', padding='same', strides=1, input_shape=input_shape))
+    # Conv2D: שכבת קונבולוציה עם 64 פילטרים בגודל 3x3
+    # activation='relu': הפונקציה הסיגמואידית relu היא פונקציית הפעלה לא לינארית
+    # padding='same': כלומר הפלט יהיה באותו גודל כמו הקלט (הוספת פדינג סביב התמונה)
+    # strides=1: הסטרייד (הזזה) הוא 1, כלומר נעבור על כל פיקסל בתמונה
+    # input_shape: נתוני הקלט, מימדי התמונה (רוחב, גובה, ערוצים)
+    model.add(BatchNormalization())  # BatchNormalization: נרמול הפלט של השכבה כדי יהיה בעל ממוצע 0 ושונות קבועה להגברת היציבות
+    model.add(MaxPooling2D((2, 2), strides=2))  # MaxPooling2D: פוולינג מקסימלי בגודל 2x2 עם סטרייד של 2
 
-    # Add convolutional layers
-    for i in range(conv_layers):
-        cnn_model.add(Conv2D(conv_filters, 
-                             kernel_size=conv_kernel_size, 
-                             activation=conv_activation))
-        cnn_model.add(BatchNormalization())
-        cnn_model.add(MaxPooling2D(pool_size=pool_size))
+    # שכבת קונבולוציה שניה
+    model.add(Conv2D(128, (3, 3), activation='relu', padding='same', strides=1))
+    # Conv2D: שכבת קונבולוציה עם 128 פילטרים בגודל 3x3
+    model.add(BatchNormalization())  # BatchNormalization: נרמול פנימי של השכבה
+    model.add(MaxPooling2D((2, 2), strides=2))  # MaxPooling2D: פוולינג מקסימלי בגודל 2x2 עם סטרייד של 2
 
-    # Fully connected layer with dropout
-    cnn_model.add(Flatten())
-    cnn_model.add(BatchNormalization())
-    cnn_model.add(Dense(num_classes, activation='sigmoid'))
+    # שכבת קונבולוציה שלישית
+    model.add(Conv2D(256, (3, 3), activation='relu', padding='same', strides=1))
+    # Conv2D: שכבת קונבולוציה עם 256 פילטרים בגודל 3x3
+    model.add(BatchNormalization())  # BatchNormalization: נרמול פנימי של השכבה
+    model.add(MaxPooling2D((2, 2), strides=2))  # MaxPooling2D: פוולינג מקסימלי בגודל 2x2 עם סטרייד של 2
 
-    # Compile the model with specified learning rate
-    optimizer = Adam(learning_rate=learning_rate)
-    cnn_model.compile(
-                    optimizer=optimizer,
-                    loss='binary_crossentropy',
-                    metrics=['accuracy'])
-  
-    return cnn_model
+    # Flatten - הופכים את הפלט לווקטור שטוח (לכדי לחבר אותו לשכבות דנס)
+    model.add(Flatten())
+    # Flatten: הפיכת מטריצה לתשדורת אחת שטוחה (וקטור)
+
+    # שכבת Dense עם רגוליזציה L2
+    model.add(Dense(256, activation='relu', kernel_regularizer=l2(0.001)))
+    # Dense: שכבת Fully Connected עם 512 נוירונים, פונקציית הפעלה relu
+    # kernel_regularizer=l2(0.001): רגוליזציה L2 על מנת למנוע אוברפיטינג (הוספת קנס לכמות האיברים בשכבה)
+    model.add(BatchNormalization())  # BatchNormalization: נרמול פנימי של השכבה
+    model.add(Dropout(0.5))  # Dropout: השמטת חצי מהנוירונים בשכבה לשיפור הכללה ולמניעת אוברפיטינג
+
+    # שכבת פלט עם פונקציית הפעלה Sigmoid עבור סיווג בינארי
+    model.add(Dense(1, activation='sigmoid'))
+    # Dense: שכבת פלט עם נוירון אחד
+    # activation='sigmoid': פונקציית הפעלה סיגמואיד המתאימה לסיווג בינארי (הפלט בין 0 ל-1)
+
+    # קומפילציה של המודל
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='binary_crossentropy', metrics=['accuracy'])
+    # Adam: אופטימיזטור Adam עם קצב למידה נמוך של 0.0001
+    # loss='binary_crossentropy': פונקציית הפסד לסיווג בינארי
+    # metrics=['accuracy']: מדד הביצועים יהיה הדיוק
+
+    # הגדרת הפסקה מוקדמת (EarlyStopping)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+    # monitor='val_loss': המעקב יהיה אחרי מדד האובדן (loss)
+    # patience=5: אם לא תהיה שיפור במשך 5 אפוקים, תבוצע הפסקה מוקדמת
+    # restore_best_weights=True: תחזור למשקולות הטובות ביותר שהיו עד כה
+
+    return model  # מחזירים את המודל שהוגדר
 
 
-# In[33]:
+# In[41]:
 
 
 # Model parameters
-input_shape = (img_height, img_width, 3)
-num_classes = 1
-
-
-# In[34]:
-
+input_shape = (112, 112, 3)
 
 # Get model
-cnn_model = create_cnn_model(input_shape, num_classes)
+cnn_model = Convolutional_neural_network_model(input_shape)
 
 # Display the model architecture
 cnn_model.summary()
@@ -692,173 +672,80 @@ cnn_model.summary()
 
 # ### Training and evaluating
 
-# In[35]:
+# In[42]:
 
 
-model_type = 'CNN'
-# Train
-cnn_history = cnn_model.fit(
-  train_generator,
-  epochs=epochs,
-  validation_data=test_generator  
-)
+tensorboard_callback = TensorBoard(log_dir='./logs', histogram_freq=1)
 
-# Evaluate
-test_loss, test_acc = cnn_model.evaluate(test_generator)
-print('Test accuracy:', test_acc)
+# Train the model with TensorBoard callback
+history = cnn_model.fit(train_generator, epochs=epochs, validation_data=test_generator, callbacks=[tensorboard_callback])
+
+
+# In[43]:
+
+
+last_val_accuracy = history.history['val_accuracy'][-1]
+
+print(f"Test Accuracy: {last_val_accuracy}")
 
 
 # ### Training Results
 
-# In[36]:
+# In[44]:
 
 
-# Plot training and test accuracy values
-plt.figure(figsize=(12, 4))
-plt.subplot(1, 2, 1)
-plt.plot(np.arange(1, len(cnn_history.history['val_accuracy']) + 1), cnn_history.history['val_accuracy'], label='Test Accuracy', color='darkolivegreen')
-plt.plot(np.arange(1, len(cnn_history.history['accuracy']) + 1), cnn_history.history['accuracy'], label='Training Accuracy', color='yellowgreen')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.title('Training and Test Accuracy')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(cnn_history.history['val_accuracy']) + 1))
-plt.legend()
+plot_history(history, 'cnn', 'accuracy')
 
-# Plot training and test loss values
-plt.subplot(1, 2, 2)
-plt.plot(np.arange(1, len(cnn_history.history['val_loss']) + 1), cnn_history.history['val_loss'], label='Test Loss', color='darkolivegreen')
-plt.plot(np.arange(1, len(cnn_history.history['loss']) + 1), cnn_history.history['loss'], label='Training Loss', color='yellowgreen')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.title('Training and Test Loss')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(cnn_history.history['val_loss']) + 1))
-plt.legend()
 
-plt.tight_layout()
-plt.show()
+# In[45]:
+
+
+plot_history(history, 'cnn', 'loss')
 
 
 # ### Model Evaluation Metrics
 
-# In[37]:
+# In[46]:
 
 
-# Evaluate the model on the test data and get predictions
 predicted_probabilities = cnn_model.predict(test_generator)
 
 # Convert probabilities to binary predictions (0 or 1)
-predicted_labels = np.round(predicted_probabilities).astype(np.int32)[:, 0]  # [:, 0] is the probabily to mistake.
+predicted_labels = np.where(predicted_probabilities > 0.5, 1, 0).astype(np.int32)
 
 # Get true labels
 true_labels = test_generator.classes
 
-# Calculate Mean Squared Error (MSE)
-mse = mean_squared_error(true_labels, predicted_labels)
-
-# Calculate Accuracy
-accuracy = accuracy_score(true_labels, predicted_labels)
-
-# Calculate Precision
-precision = precision_score(true_labels, predicted_labels)
-
-# Calculate Recall
-recall = recall_score(true_labels, predicted_labels)
-
-print(f'MSE:       {mse:.5f}')
-print(f'Accuracy:  {accuracy:.5f}')
-print(f'Precision: {precision:.5f}')
-print(f'Recall:    {recall:.5f}')
+# Use the evaluate_model_performance function
+accuracy, precision, recall, mse = evaluate_model_performance(true_labels, predicted_labels)
 
 
 # ### Classification Report
 
-# In[38]:
+# In[47]:
 
 
-# Generate classification report
 report = classification_report(true_labels, predicted_labels, target_names=["Benign", "Malignant"])
 print("Classification Report:\n", report)
 
 
 # ### Confusion Matrix
 
-# In[39]:
+# In[48]:
 
 
-# Generate confusion matrix
-cm = confusion_matrix(true_labels, predicted_labels)
+cnn_cm = confusion_matrix(true_labels, predicted_labels)
 
-# Display the confusion matrix
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Benign", "Malignant"])
-disp.plot(cmap='Greens', values_format='d')
-plt.title("Confusion Matrix")
-plt.show()
+disp = ConfusionMatrixDisplay(confusion_matrix=cnn_cm, display_labels=["Benign", "Malignant"])
 
-
-# ## Comparation
-
-# In[40]:
-
-
-# Create a figure with 4 subplots
-plt.figure(figsize=(18, 12))
-
-# Comparison of Training Accuracy for all models
-plt.subplot(2, 2, 1)
-plt.plot(np.arange(1, len(history.history['accuracy']) + 1), history.history['accuracy'], label='NN', color="skyblue")
-plt.plot(np.arange(1, len(lr_history.history['accuracy']) + 1), lr_history.history['accuracy'], label='Logistic Regression', color='gold')
-plt.plot(np.arange(1, len(cnn_history.history['accuracy']) + 1), cnn_history.history['accuracy'], label='CNN', color='yellowgreen')
-plt.plot(np.arange(1, len(history.history['accuracy']) + 1), [baseline_accuracy] * len(history.history['accuracy']), label='Baseline', color='red')
-plt.xlabel('Epoch')
-plt.ylabel('Training Accuracy')
-plt.title('Training Accuracy Comparison')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(history.history['accuracy']) + 1))
-plt.legend()
-
-# Comparison of Training Loss for all models
-plt.subplot(2, 2, 2)
-plt.plot(np.arange(1, len(history.history['loss']) + 1), history.history['loss'], label='NN', color="skyblue")
-plt.plot(np.arange(1, len(lr_history.history['loss']) + 1), lr_history.history['loss'], label='Logistic Regression', color='gold')
-plt.plot(np.arange(1, len(cnn_history.history['loss']) + 1), cnn_history.history['loss'], label='CNN', color='yellowgreen')
-plt.xlabel('Epoch')
-plt.ylabel('Training Loss')
-plt.title('Training Loss Comparison')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(history.history['loss']) + 1))
-plt.legend()
-
-# Comparison of Test Accuracy for all models
-plt.subplot(2, 2, 3)
-plt.plot(np.arange(1, len(history.history['val_accuracy']) + 1), history.history['val_accuracy'], label='NN', color="steelblue")
-plt.plot(np.arange(1, len(lr_history.history['val_accuracy']) + 1), lr_history.history['val_accuracy'], label='Logistic Regression', color='darkgoldenrod')
-plt.plot(np.arange(1, len(cnn_history.history['val_accuracy']) + 1), cnn_history.history['val_accuracy'], label='CNN', color='darkolivegreen')
-plt.plot(np.arange(1, len(history.history['val_accuracy']) + 1), [baseline_accuracy] * len(history.history['val_accuracy']), label='Baseline', color='red')
-plt.xlabel('Epoch')
-plt.ylabel('Test Accuracy')
-plt.title('Test Accuracy Comparison')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(history.history['val_accuracy']) + 1))
-plt.legend()
-
-# Comparison of Test Loss for all models
-plt.subplot(2, 2, 4)
-plt.plot(np.arange(1, len(history.history['val_loss']) + 1), history.history['val_loss'], label='NN', color="steelblue")
-plt.plot(np.arange(1, len(lr_history.history['val_loss']) + 1), lr_history.history['val_loss'], label='Logistic Regression', color='darkgoldenrod')
-plt.plot(np.arange(1, len(cnn_history.history['val_loss']) + 1), cnn_history.history['val_loss'], label='CNN', color='darkolivegreen')
-plt.xlabel('Epoch')
-plt.ylabel('Test Loss')
-plt.title('Test Loss Comparison')
-plt.grid(True, linestyle='--', alpha=0.7)
-plt.xticks(range(1, len(history.history['val_loss']) + 1))
-plt.legend()
-
-# Adjust layout for better visualization
+fig, ax = plt.subplots(figsize=(6, 6))
+disp.plot(cmap='Blues', values_format='d', ax=ax)
+ax.grid(False)
+plt.title("Confusion Matrix for CNN Model", fontsize=14)
+plt.xlabel("Predicted Label", fontsize=12)
+plt.ylabel("True Label", fontsize=12)
+plt.xticks(rotation=45)
 plt.tight_layout()
-
-# Show the combined plot
 plt.show()
 
 
@@ -866,40 +753,28 @@ plt.show()
 
 # ## Prediction Results
 
-# In[41]:
+# In[49]:
 
 
-# Get a batch of images and labels from the test generator
-batch_images, batch_labels = test_generator.__next__()
+num_images = 20
+images, labels = next(test_generator)
+predictions = cnn_model.predict(images)
+cols = 5
+rows = num_images // cols + (num_images % cols > 0)
 
-# Select 6 random indices from the batch
-random_indices = np.random.choice(len(batch_labels), 6, replace=False)
-
-# Create a figure with 2 rows and 3 columns
-plt.figure(figsize=(14, 8))
-
-# Display images with predicted and true labels
-for i, index in enumerate(random_indices, start=1):
-    plt.subplot(2, 3, i)
-    plt.imshow(batch_images[index])
+plt.figure(figsize=(15, 5 * rows))
+for i in range(num_images):
+    plt.subplot(rows, cols, i + 1)
+    plt.imshow(images[i])
     plt.axis('off')
-    
-    # Determine the predicted class based on a threshold (e.g., 0.5)
-    if model_type == 'baseLine':
-        predicted_class = baseline_majority_class
-    else:
-        predicted_class = 1 if predicted_probabilities[index][0] >= 0.5 else 0
-    
-    # Check if the prediction is correct
-    is_correct = predicted_class == batch_labels[index]
-    
-    # Use checkmark (✔) for correct and cross (✘) for incorrect
-    sign = "✔" if is_correct else "✘"
-    
-    # Display prediction probability, predicted class, and true class
-    plt.title(f"Prediction: {'Malignant' if predicted_class == 1 else 'Benign'}\nTrue: {'Malignant' if batch_labels[index] == 1 else 'Benign'}\n{predicted_probabilities[index][0]:.2f}\n{sign}")
 
-# Adjust layout for better visualization
+    true_label = "malignant" if labels[i] == 1 else "benign"
+    predicted_label = "malignant" if predictions[i] > 0.5 else "benign"
+
+    color = "green" if true_label == predicted_label else "red"
+
+    plt.title(f"True: {true_label}\nPred: {predicted_label}", color=color, fontsize=10)
+
 plt.tight_layout()
 plt.show()
 
