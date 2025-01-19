@@ -600,61 +600,43 @@ K.clear_session()
 # In[40]:
 
 
-# יצירת המודל
 def Convolutional_neural_network_model(input_shape):
-    model = Sequential()  # מודל סיקוונסיאלי, בו כל השכבות ממוקמות אחת אחרי השנייה
+    model = Sequential()  
 
-    # שכבת קונבולוציה ראשונה
     model.add(Conv2D(64, (3, 3), activation='relu', padding='same', strides=1, input_shape=input_shape))
-    # Conv2D: שכבת קונבולוציה עם 64 פילטרים בגודל 3x3
-    # activation='relu': הפונקציה הסיגמואידית relu היא פונקציית הפעלה לא לינארית
-    # padding='same': כלומר הפלט יהיה באותו גודל כמו הקלט (הוספת פדינג סביב התמונה)
-    # strides=1: הסטרייד (הזזה) הוא 1, כלומר נעבור על כל פיקסל בתמונה
-    # input_shape: נתוני הקלט, מימדי התמונה (רוחב, גובה, ערוצים)
-    model.add(BatchNormalization())  # BatchNormalization: נרמול הפלט של השכבה כדי יהיה בעל ממוצע 0 ושונות קבועה להגברת היציבות
-    model.add(MaxPooling2D((2, 2), strides=2))  # MaxPooling2D: פוולינג מקסימלי בגודל 2x2 עם סטרייד של 2
+    model.add(BatchNormalization())  
+    model.add(MaxPooling2D((2, 2), strides=2)) 
 
-    # שכבת קונבולוציה שניה
+    
     model.add(Conv2D(128, (3, 3), activation='relu', padding='same', strides=1))
-    # Conv2D: שכבת קונבולוציה עם 128 פילטרים בגודל 3x3
-    model.add(BatchNormalization())  # BatchNormalization: נרמול פנימי של השכבה
-    model.add(MaxPooling2D((2, 2), strides=2))  # MaxPooling2D: פוולינג מקסימלי בגודל 2x2 עם סטרייד של 2
+    
+    model.add(BatchNormalization())  
+    model.add(MaxPooling2D((2, 2), strides=2))  
 
-    # שכבת קונבולוציה שלישית
+ 
     model.add(Conv2D(256, (3, 3), activation='relu', padding='same', strides=1))
-    # Conv2D: שכבת קונבולוציה עם 256 פילטרים בגודל 3x3
-    model.add(BatchNormalization())  # BatchNormalization: נרמול פנימי של השכבה
-    model.add(MaxPooling2D((2, 2), strides=2))  # MaxPooling2D: פוולינג מקסימלי בגודל 2x2 עם סטרייד של 2
+    
+    model.add(BatchNormalization())  
+    model.add(MaxPooling2D((2, 2), strides=2)) 
 
-    # Flatten - הופכים את הפלט לווקטור שטוח (לכדי לחבר אותו לשכבות דנס)
+   
     model.add(Flatten())
-    # Flatten: הפיכת מטריצה לתשדורת אחת שטוחה (וקטור)
+    
 
-    # שכבת Dense עם רגוליזציה L2
+ 
     model.add(Dense(256, activation='relu', kernel_regularizer=l2(0.001)))
-    # Dense: שכבת Fully Connected עם 512 נוירונים, פונקציית הפעלה relu
-    # kernel_regularizer=l2(0.001): רגוליזציה L2 על מנת למנוע אוברפיטינג (הוספת קנס לכמות האיברים בשכבה)
-    model.add(BatchNormalization())  # BatchNormalization: נרמול פנימי של השכבה
-    model.add(Dropout(0.5))  # Dropout: השמטת חצי מהנוירונים בשכבה לשיפור הכללה ולמניעת אוברפיטינג
+    
+    model.add(BatchNormalization()) 
+    model.add(Dropout(0.5))  
 
-    # שכבת פלט עם פונקציית הפעלה Sigmoid עבור סיווג בינארי
+   
     model.add(Dense(1, activation='sigmoid'))
-    # Dense: שכבת פלט עם נוירון אחד
-    # activation='sigmoid': פונקציית הפעלה סיגמואיד המתאימה לסיווג בינארי (הפלט בין 0 ל-1)
 
-    # קומפילציה של המודל
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='binary_crossentropy', metrics=['accuracy'])
-    # Adam: אופטימיזטור Adam עם קצב למידה נמוך של 0.0001
-    # loss='binary_crossentropy': פונקציית הפסד לסיווג בינארי
-    # metrics=['accuracy']: מדד הביצועים יהיה הדיוק
 
-    # הגדרת הפסקה מוקדמת (EarlyStopping)
     early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
-    # monitor='val_loss': המעקב יהיה אחרי מדד האובדן (loss)
-    # patience=5: אם לא תהיה שיפור במשך 5 אפוקים, תבוצע הפסקה מוקדמת
-    # restore_best_weights=True: תחזור למשקולות הטובות ביותר שהיו עד כה
 
-    return model  # מחזירים את המודל שהוגדר
+    return model  
 
 
 # In[41]:
